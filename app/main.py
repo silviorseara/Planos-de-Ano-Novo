@@ -101,9 +101,15 @@ def main() -> None:
 
     if not user:
         try:
-            has_oauth_config = bool(st.secrets.get("google_oauth"))
+            secrets_dict = st.secrets
+            feature_flags = secrets_dict.get("feature_flags", {})
+            disable_oauth = bool(feature_flags.get("disable_oauth"))
+            google_oauth_cfg = secrets_dict.get("google_oauth")
         except Exception:  # pragma: no cover - Streamlit raises if secrets unset
-            has_oauth_config = False
+            disable_oauth = False
+            google_oauth_cfg = None
+
+        has_oauth_config = bool(google_oauth_cfg) and not disable_oauth
 
         if has_oauth_config:
             _render_login()
