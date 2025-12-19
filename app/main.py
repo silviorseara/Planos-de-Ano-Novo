@@ -126,10 +126,13 @@ def main() -> None:
 
     if not user:
         feature_flags = _get_secret_section("feature_flags")
-        disable_oauth = _coerce_bool(feature_flags.get("disable_oauth"))
+        disable_oauth_flag = feature_flags.get("disable_oauth", True)
+        disable_oauth = _coerce_bool(disable_oauth_flag)
         disable_oauth = disable_oauth or _coerce_bool(os.environ.get("STREAMLIT_DISABLE_OAUTH"))
 
         google_oauth_cfg = _get_secret_section("google_oauth")
+        if not google_oauth_cfg:
+            disable_oauth = True
         required_keys = ("client_id", "client_secret")
         has_oauth_credentials = bool(google_oauth_cfg) and all(
             google_oauth_cfg.get(key) for key in required_keys
