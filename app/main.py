@@ -2,10 +2,18 @@
 from __future__ import annotations
 
 import secrets
+import sys
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
 import streamlit as st
+
+if __package__ is None:  # Ensure repository root is importable when run as script
+    repo_root = Path(__file__).resolve().parent.parent
+    repo_root_str = str(repo_root)
+    if repo_root_str not in sys.path:
+        sys.path.append(repo_root_str)
 
 from app.auth import google, session
 from app.data.database import get_session, init_db
