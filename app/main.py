@@ -1,8 +1,10 @@
 """Main entry point for the Streamlit app."""
 from __future__ import annotations
 
+import os
 import secrets
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -21,6 +23,29 @@ from app.data.models import User
 from app.ui.layout import app_header, sidebar_menu
 
 STATE_KEY = "oauth_state"
+
+
+def _coerce_bool(value: Any) -> bool:
+    """Convert string-ish truthy values to bool."""
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _get_secret_section(name: str) -> dict[str, Any]:
+    """Safely retrieve a secrets section as a plain dict."""
+    try:
+        section = st.secrets[name]
+    except Exception:  # pragma: no cover - secrets missing
+        return {}
+
+    if isinstance(section, Mapping):
+        return dict(section)
+
+    if hasattr(section, "items"):
+        return {key: val for key, val in section.items()}
+
+    return {}
 
 
 def _ensure_oauth_state() -> str:
@@ -100,27 +125,15 @@ def main() -> None:
             user = callback_user
 
     if not user:
-        disable_oauth = False
-        has_oauth_credentials = False
+        feature_flags = _get_secret_section("feature_flags")
+        disable_oauth = _coerce_bool(feature_flags.get("disable_oauth"))
+        disable_oauth = disable_oauth or _coerce_bool(os.environ.get("STREAMLIT_DISABLE_OAUTH"))
 
-        try:
-            secrets_dict = st.secrets
-        except Exception:  # pragma: no cover - Streamlit raises if secrets unset
-            secrets_dict = None
-
-        if secrets_dict:
-            feature_flags = secrets_dict.get("feature_flags", {})
-            if feature_flags:
-                flag_value = feature_flags.get("disable_oauth")
-                if isinstance(flag_value, str):
-                    disable_oauth = flag_value.strip().lower() in {"1", "true", "yes"}
-                else:
-                    disable_oauth = bool(flag_value)
-
-            google_oauth_cfg = secrets_dict.get("google_oauth")
-            if google_oauth_cfg and not disable_oauth:
-                required_keys = ("client_id", "client_secret")
-                has_oauth_credentials = all(google_oauth_cfg.get(key) for key in required_keys)
+        google_oauth_cfg = _get_secret_section("google_oauth")
+        required_keys = ("client_id", "client_secret")
+        has_oauth_credentials = bool(google_oauth_cfg) and all(
+            google_oauth_cfg.get(key) for key in required_keys
+        )
 
         if has_oauth_credentials and not disable_oauth:
             _render_login()
