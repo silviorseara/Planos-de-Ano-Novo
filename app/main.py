@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import secrets
 from typing import Any
+from urllib.parse import urlencode
 
 import streamlit as st
-
-from urllib.parse import urlencode
 
 from app.auth import google, session
 from app.data.database import get_session, init_db
@@ -38,10 +37,10 @@ def _handle_oauth_callback() -> dict[str, Any] | None:
 
     flow = google.build_flow(state=state)
     redirect_uri = flow.redirect_uri
-    # Reconstruct the full callback URL Streamlit handled.
     current_url = f"{redirect_uri}?{urlencode(params)}"
     user_info = google.fetch_user_info(flow, authorization_response=current_url)
     google.store_token(token_json=user_info.pop("token"))
+    st.experimental_set_query_params()
     return user_info
 
 
@@ -56,17 +55,6 @@ def _render_login() -> None:
         st.stop()
 
 
-def main() -> None:
-    """Run Streamlit application."""
-    init_db()
-    app_header()
-    sidebar_menu()
-
-    user = session.get_current_user()
-    if not user:
-        user = _handle_oauth_callback()
-        if user:
-            session.set_current_user(user)
 def _ensure_guest_user() -> dict[str, Any]:
     """Provide a guest user for local testing when OAuth is skipped."""
     with get_session() as db:
@@ -90,23 +78,37 @@ def _ensure_guest_user() -> dict[str, Any]:
         }
 
 
+def main() -> None:
+    """Run Streamlit application."""
+    init_db()
+    app_header()
+    sidebar_menu()
 
     user = session.get_current_user()
     if not user:
-        _render_login()
-        return
+        callback_user = _handle_oauth_callback()
+        if callback_user:
+            session.set_current_user(callback_user)
+            user = callback_user
+
+    if not user:
+        try:
+            has_oauth_config = bool(st.secrets.get("google_oauth"))
+        except Exception:  # pragma: no cover - Streamlit raises if secrets unset
+            has_oauth_config = False
+
+        if has_oauth_config:
+            _render_login()
+            return
+
+        user = _ensure_guest_user()
+        session.set_current_user(user)
+        st.info("Executando em modo convidado. Configure o OAuth para habilitar login Google.")
 
     st.success(f"Bem-vindo, {user['full_name']}!")
     st.write("Selecione uma das páginas na barra lateral para gerenciar seus planos.")
 
     if st.button("Sair"):
         session.clear_session()
+        google.clear_token()
         st.rerun()
-
-
-        guest = _ensure_guest_user()
-        session.set_current_user(guest)
-        user = guest
-        st.info("Executando em modo convidado. Configure o OAuth para habilitar login Google.")
-    else:
-        st.success(f"Bem-vindo, {user['full_name']}!")
